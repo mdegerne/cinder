@@ -57,7 +57,7 @@ if __name__ == '__main__':
     try:
         servers.append(service.WSGIService('osapi_volume'))
     except (Exception, SystemExit):
-        logging.exception(_('Failed to load %s') % '%s-api' % api)
+        LOG.exception(_('Failed to load %s') % 'osapi_volume')
 
     for binary in ['cinder-volume', 'cinder-scheduler']:
         try:
