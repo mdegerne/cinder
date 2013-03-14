@@ -204,6 +204,12 @@ class InvalidUnicodeParameter(Invalid):
     message = _("Invalid Parameter: "
                 "Unicode is not supported by the current database.")
 
+class WouldTruncate(Invalid):
+    message = _("Image would be truncated, must be at least %(size)d GB")
+
+    def __init__(self, *args, **kwargs):
+        self.size = kwargs.get('size', 0)
+        super(WouldTruncate, self).__init__(*args, **kwargs)
 
 # Cannot be templated as the error syntax varies.
 # msg needs to be constructed when raised.
