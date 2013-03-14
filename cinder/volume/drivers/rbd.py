@@ -16,6 +16,7 @@ RADOS Block Device Driver
 """
 
 import json
+import re
 import os
 import tempfile
 import urllib
@@ -100,7 +101,7 @@ class RBDDriver(driver.VolumeDriver):
         return self._stats
 
     def _supports_layering(self):
-        stdout, _ = self._execute('rbd', '--help')
+        stdout, _stderr = self._execute('rbd', '--help')
         return 'clone' in stdout
 
     def create_cloned_volume(self, volume, src_vref):
@@ -130,6 +131,28 @@ class RBDDriver(driver.VolumeDriver):
 
     def _resize(self, volume):
         size = int(volume['size']) * 1024
+        # Don't allow volume to shrink
+        stdout, _stderr = self._execute('rbd', 'info',
+                          '--pool', self.configuration.rbd_pool,
+                          '--image', volume['name'])
+
+        pat = re.compile(r'size (\d+) (\w?)B')
+        match = pat.search(stdout)
+        if match:
+            s, mod = match.groups()
+            mysize = int(s)
+            if mod == 'K':
+                mysize = (mysize / 1024)
+            elif mod == 'M':
+                pass
+            elif mod == 'G':
+                mysize = (mysize * 1024)
+            elif mod == 'T':
+                mysize = (mysize * 1024 * 1024)
+            if (size < mysize):
+                gsize = (mysize / 1024) + 1
+                LOG.info(_("Resize would truncate volume. Current size = %(gsize)dG Requested size %(sz)dG" % {'gsize': gsize, 'sz': (size / 1024) + 1}))
+                raise exception.WouldTruncate(size=gsize)
         self._try_execute('rbd', 'resize',
                           '--pool', self.configuration.rbd_pool,
                           '--image', volume['name'],
@@ -144,7 +167,7 @@ class RBDDriver(driver.VolumeDriver):
 
     def delete_volume(self, volume):
         """Deletes a logical volume."""
-        stdout, _ = self._execute('rbd', 'snap', 'ls',
+        stdout, _stderr = self._execute('rbd', 'snap', 'ls',
                                   '--pool', self.configuration.rbd_pool,
                                   volume['name'])
         if stdout.count('\n') > 1:
@@ -229,7 +252,7 @@ class RBDDriver(driver.VolumeDriver):
         return pieces
 
     def _get_fsid(self):
-        stdout, _ = self._execute('ceph', 'fsid')
+        stdout, _stderr = self._execute('ceph', 'fsid')
         return stdout.rstrip('\n')
 
     def _is_cloneable(self, image_location):
