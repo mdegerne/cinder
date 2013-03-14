@@ -16,6 +16,7 @@ RADOS Block Device Driver
 """
 
 import json
+import re
 import os
 import tempfile
 import urllib
@@ -126,6 +127,27 @@ class RBDDriver(driver.VolumeDriver):
 
     def _resize(self, volume):
         size = int(volume['size']) * 1024
+        # Don't allow volume to shrink
+        stdout, _ = self._execute('rbd', 'info',
+                          '--pool', self.configuration.rbd_pool,
+                          '--image', volume['name'])
+
+        pat = re.compile(r'size (\d+) (\w?)B')
+        match = pat.search(stdout)
+        if match:
+            s, mod = match.groups()
+            mysize = int(s)
+            if mod == 'K':
+                mysize = (mysize / 1024)
+            elif mod == 'M':
+                pass
+            elif mod == 'G':
+                mysize = (mysize * 1024)
+            elif mod == 'T':
+                mysize = (mysize * 1024 * 1024)
+            if (size < mysize):
+                gsize = (mysize / 1024) + 1
+                raise exception.WouldTruncate(size=gsize)
         self._try_execute('rbd', 'resize',
                           '--pool', self.configuration.rbd_pool,
                           '--image', volume['name'],

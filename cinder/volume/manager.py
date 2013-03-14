@@ -67,6 +67,10 @@ volume_manager_opts = [
     cfg.StrOpt('volume_driver',
                default='cinder.volume.drivers.lvm.LVMISCSIDriver',
                help='Driver to use for volume creation'),
+    cfg.BoolOpt('allowresize',
+               default=False,
+               help=('Allow automatic volume resize when creating volume'
+                     ' from image')),
 ]
 
 FLAGS = flags.FLAGS
@@ -188,7 +192,6 @@ class VolumeManager(manager.SchedulerDependentManager):
                                            volume_ref,
                                            image_service,
                                            image_id)
-
         return model_update, cloned
 
     def create_volume(self, context, volume_id, request_spec=None,
@@ -242,13 +245,29 @@ class VolumeManager(manager.SchedulerDependentManager):
                 LOG.info(_("volume %s: creating"), volume_ref['name'])
 
             try:
-                model_update, cloned = self._create_volume(context,
-                                                           volume_ref,
-                                                           snapshot_ref,
-                                                           sourcevol_ref,
-                                                           image_service,
-                                                           image_id,
-                                                           image_location)
+                try:
+                    model_update, cloned = self._create_volume(context,
+                                                               volume_ref,
+                                                               snapshot_ref,
+                                                               sourcevol_ref,
+                                                               image_service,
+                                                               image_id,
+                                                               image_location)
+                except exception.WouldTruncate, e:
+                    self.driver.delete_volume(volume_ref)
+                    if FLAGS.allowresize and e.size:
+                        volume_ref['size'] = str(e.size)
+                        LOG.debug(_("volume %(vol_name)s: resizing to"
+                            " %(vol_size)sG") % locals())
+                        model_update, cloned = self._create_volume(context,
+                                                               volume_ref,
+                                                               snapshot_ref,
+                                                               sourcevol_ref,
+                                                               image_service,
+                                                               image_id,
+                                                               image_location)
+                    else:
+                        raise
             except Exception:
                 # restore source volume status before reschedule
                 if sourcevol_ref is not None:
