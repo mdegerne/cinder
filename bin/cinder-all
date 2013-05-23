@@ -45,6 +45,7 @@ from cinder.openstack.common import log as logging
 from cinder import service
 from cinder import utils
 
+FLAGS = flags.FLAGS
 
 if __name__ == '__main__':
     flags.parse_args(sys.argv)
@@ -59,10 +60,24 @@ if __name__ == '__main__':
     except (Exception, SystemExit):
         LOG.exception(_('Failed to load osapi_volume'))
 
-    for binary in ['cinder-volume', 'cinder-scheduler']:
+    try:
+        servers.append(service.Service.create(binary='cinder-scheduler'))
+    except (Exception, SystemExit):
+        LOG.exception(_('Failed to load cinder-scheduler'))
+    if FLAGS.enabled_backends:
+        for backend in FLAGS.enabled_backends:
+            host = "%s@%s" % (FLAGS.host, backend)
+            try:
+                servers.append(service.Service.create(
+                                        host=host,
+                                        service_name=backend))
+            except (Exception, SystemExit):
+                LOG.exception(_('Failed to load %s backend') % backend)
+    else:
         try:
-            servers.append(service.Service.create(binary=binary))
-        except (Exception, SystemExit):
-            LOG.exception(_('Failed to load %s'), binary)
+            servers.append(service.Service.create(binary='cinder-volume'))
+        except:
+            LOG.exception(_('Failed to load cinder-volume'))
+
     service.serve(*servers)
     service.wait()
